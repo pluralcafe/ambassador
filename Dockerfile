@@ -13,6 +13,8 @@ RUN apk -U upgrade \
                build-base \
                postgresql-dev \
  && apk add tini \
+            ca-certificates \
+            tzdata \
  && update-ca-certificates \
  && rm -rf /tmp/* /var/cache/apk/* \
  && addgroup -g ${GID} barkeep \
