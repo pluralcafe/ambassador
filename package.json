@@ -6,12 +6,13 @@
   "author": "@mykola@a.weirder.earth",
   "license": "MIT",
   "dependencies": {
-    "mastodon": "^1.1.1",
-    "pg": "^6.1.5",
-    "pm2": "^2.4.4"
+    "mastodon": "^1.2.2",
+    "pg": "^7.4.1",
+    "pm2": "^2.10.2"
   },
   "scripts": {
-    "start": "pm2 start index.js",
-    "restart": "pm2 restart index"
+    "start": "pm2 start --no-daemon index.js --restart-delay 10000",
+    "restart": "pm2 restart --no-daemon index.js --restart-delay 10000"
   }
 }
+
