@@ -8,8 +8,8 @@ ENV GID=992
 
 WORKDIR /barkeep
 
-RUN addgroup -g ${GID} barkeep \
- && adduser -h /barkeep -s /bin/sh -D -G barkeep -u ${UID} barkeep
+RUN addgroup --gid ${GID} barkeep \
+ && adduser --home /barkeep --shell /bin/sh --disabled-login --ingroup barkeep --uid ${UID} barkeep
 
 COPY package.json index.js yarn.lock /barkeep/
 
