@@ -1,4 +1,4 @@
-FROM node:alpine
+FROM node:slim
 
 LABEL maintainer="https://github.com/pluralcafe/barkeep" \
       description="Ambassador bot forked from mbilokonsky/ambassador"
