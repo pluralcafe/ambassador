@@ -1,4 +1,4 @@
-FROM node:slim
+FROM node:alpine
 
 LABEL maintainer="https://github.com/pluralcafe/barkeep" \
       description="Ambassador bot forked from mbilokonsky/ambassador"
@@ -8,13 +8,20 @@ ENV GID=992
 
 WORKDIR /barkeep
 
-RUN addgroup --gid ${GID} barkeep \
- && adduser --home /barkeep --shell /bin/sh --disabled-login --ingroup barkeep --uid ${UID} barkeep
+RUN echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories \
+ && apk -U upgrade \
+ && apk add -t build-dependencies \
+    build-base \
+    postgresql-dev \
+ && apk add tini \
+ && update-ca-certificates \
+ && rm -rf /tmp/* /var/cache/apk/* \
+ && addgroup -g ${GID} barkeep \
+ && adduser -h /barkeep -s /bin/sh -D -G barkeep -u ${UID} barkeep
 
-COPY package.json index.js yarn.lock /barkeep/
+COPY --chown=barkeep:barkeep package.json index.js yarn.lock /barkeep/
 
-RUN yarn install \
- && chown -R barkeep:barkeep /barkeep
+RUN yarn install
 
 USER barkeep
 
