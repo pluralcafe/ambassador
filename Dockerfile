@@ -19,7 +19,7 @@ RUN echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/rep
  && addgroup -g ${GID} barkeep \
  && adduser -h /barkeep -s /bin/sh -D -G barkeep -u ${UID} barkeep
 
-COPY --chown=barkeep:barkeep package.json index.js yarn.lock /barkeep/
+COPY --chown=barkeep:barkeep package.json index.js /barkeep/
 
 RUN yarn install
 
