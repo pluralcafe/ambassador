@@ -8,7 +8,7 @@ ENV GID=992
 
 WORKDIR /barkeep
 
-RUN echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories \
+RUN echo "@edge https://uk.alpinelinux.org/alpine/edge/main" >> /etc/apk/repositories \
  && apk -U upgrade \
  && apk add -t build-dependencies \
     build-base \
