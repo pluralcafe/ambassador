@@ -14,6 +14,8 @@ RUN echo "@edge https://dl-cdn.alpinelinux.org/alpine/edge/main" >> /etc/apk/rep
     build-base \
     postgresql-dev \
  && apk add tini \
+            ca-certificates \
+            tzdata \
  && update-ca-certificates \
  && rm -rf /tmp/* /var/cache/apk/* \
  && addgroup -g ${GID} barkeep \
