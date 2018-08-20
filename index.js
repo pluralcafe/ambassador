@@ -12,6 +12,7 @@ var THRESHOLD_INTERVAL_DAYS = process.env.THRESHOLD_INTERVAL_DAYS || 30;
 var BOOST_MAX_DAYS = process.env.BOOST_MAX_DAYS || 5;
 var THRESHOLD_CHECK_INTERVAL = process.env.THRESHOLD_CHECK_INTERVAL || 15; // cycles
 var CYCLE_INTERVAL = process.env.CYCLE_INTERVAL || 15; // minutes
+var BOOST_MIN_HOURS = process.env.BOOST_MIN_HOURS || 12;
 
 var config = {
   user: process.env.DB_USER || 'ambassador',
@@ -42,8 +43,28 @@ var query = `SELECT id, updated_at
         pt2.reblog_of_id = public_toots.id
         AND pt2.account_id = $2
     )
+    AND NOT EXISTS (
+      SELECT 1
+      FROM blocks_ambassador
+      WHERE
+        public_toots.account_id = blocks_ambassador.account_id
+    )
     AND updated_at > NOW() - INTERVAL '` + BOOST_MAX_DAYS + ` days'
+    AND updated_at < NOW() - INTERVAL '` + BOOST_MIN_HOURS + ` hours'
+  ORDER BY RANDOM()
   LIMIT $3`
+
+// adding this to the WHERE clause would let it skip cases where we're
+// blocked by the original poster, but we don't have read privs to blocks
+// and I'm not sure I want to change that.  -rt
+//
+//    AND NOT EXISTS (
+//      SELECT 1
+//      FROM blocks AS bl1
+//      WHERE
+//        public_toots.account_id = bl1.account_id
+//        AND bl1.target_account_id = 13104
+//    )
 
 console.dir('STARTING AMBASSADOR');
 console.log('\tDB_USER:', DB_USER);
@@ -138,15 +159,19 @@ function whoami(f) {
 
 function boost(rows) {
   rows.forEach(function(row) {
+    console.log('boosting status #' + row.id);
     M.post('/statuses/' + row.id + '/reblog', function(err, result) {
       if (err) {
         if (err.message === 'Validation failed: Reblog of status already exists') {
           return console.log('Warning: tried to boost #' + row.id + ' but it had already been boosted by this account.');
         }
 
+        if (err.message === 'This action is not allowed') {
+          return console.log('Warning: tried to boost #' + row.id + ' but the action was not allowed.');
+        }
+
         return console.log(err);
       }
-      console.log('boosted status #' + row.id);
     });
   })
 }
