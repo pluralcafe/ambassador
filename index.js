@@ -1,4 +1,4 @@
-var mastodon = require('./lib/mastodon');
+var fetch = require('node-fetch');
 var pg = require('pg');
 
 var DB_USER = process.env.DB_USER || 'ambassador';
@@ -137,43 +137,48 @@ function cycle() {
   });
 }
 
-var M = new mastodon({
-  access_token: AMBASSADOR_TOKEN,
-  api_url: INSTANCE_HOST + '/api/v1'
-});
-
 function whoami(f) {
-  M.get('/accounts/verify_credentials', function(err, result) {
-    if (err) {
-      console.error('error getting current user id');
-      throw err;
+  fetch(INSTANCE_HOST + '/api/v1/accounts/verify_credentials', {
+    headers: {
+      'Authorization': 'Bearer ' + AMBASSADOR_TOKEN
     }
+  })
+  .then(res => res.json())
+  .then(result => {
     if (result.id === undefined) {
       console.error('verify_credentials result is undefined');
-      throw "verify_credentials failed";
+      process.exit(1);
     }
     console.log('Authenticated as ' + result.id + ' (' + result.display_name + ')');
     return f(result.id);
   })
+  .catch(err => {
+    console.error(err);
+    process.exit(1);
+  });
 }
 
 function boost(rows) {
   rows.forEach(function(row) {
     console.log('boosting status #' + row.id);
-    M.post('/statuses/' + row.id + '/reblog', function(err, result) {
-      if (err) {
-        if (err.message === 'Validation failed: Reblog of status already exists') {
-          return console.log('Warning: tried to boost #' + row.id + ' but it had already been boosted by this account.');
-        }
-
-        if (err.message === 'This action is not allowed') {
-          return console.log('Warning: tried to boost #' + row.id + ' but the action was not allowed.');
-        }
-
-        return console.log(err);
+    fetch(INSTANCE_HOST + '/api/v1/statuses/' + row.id + '/reblog', {
+      headers: {
+        'Authorization': 'Bearer ' + AMBASSADOR_TOKEN
+      },
+      body: ''
+    })
+    .then(res => res.json())
+    .then(result => {
+      if (result.message === 'Validation failed: Reblog of status already exists') {
+        console.log('Warning: tried to boost #' + row.id + ' but it had already been boosted by this account.');
+      } else if(result.message === 'This action is not allowed') {
+        console.log('Warning: tried to boost #' + row.id + ' but the action was not allowed.');
       }
+    }).catch(err => {
+      console.error(err);
+      process.exit(1);
     });
-  })
+  }
 }
 
 cycle();
