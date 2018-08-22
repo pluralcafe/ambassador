@@ -1,4 +1,4 @@
-var mastodon = require('mastodon');
+var mastodon = require('./node-mastodon/lib/mastodon');
 var pg = require('pg');
 
 var DB_USER = process.env.DB_USER || 'ambassador';
