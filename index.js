@@ -165,7 +165,8 @@ function boost(rows) {
       headers: {
         'Authorization': 'Bearer ' + AMBASSADOR_TOKEN
       },
-      body: ''
+      body: '',
+      method: 'POST'
     })
     .then(res => res.json())
     .then(result => {
