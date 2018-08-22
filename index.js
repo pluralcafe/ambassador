@@ -179,7 +179,7 @@ function boost(rows) {
       console.error(err);
       process.exit(1);
     });
-  }
+  });
 }
 
 cycle();
