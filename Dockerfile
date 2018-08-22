@@ -21,7 +21,7 @@ RUN echo "@edge https://uk.alpinelinux.org/alpine/edge/main" >> /etc/apk/reposit
  && addgroup -g ${GID} barkeep \
  && adduser -h /barkeep -s /bin/sh -D -G barkeep -u ${UID} barkeep
 
-COPY --chown=barkeep:barkeep package.json index.js /barkeep/
+COPY --chown=barkeep:barkeep package.json index.js node-mastodon /barkeep/
 
 RUN yarn install
 
