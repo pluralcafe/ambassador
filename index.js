@@ -1,4 +1,4 @@
-var fetch = require('node-fetch');
+var mastodon = require('mastodon');
 var pg = require('pg');
 
 var DB_USER = process.env.DB_USER || 'ambassador';
@@ -13,6 +13,10 @@ var BOOST_MAX_DAYS = process.env.BOOST_MAX_DAYS || 5;
 var THRESHOLD_CHECK_INTERVAL = process.env.THRESHOLD_CHECK_INTERVAL || 15; // cycles
 var CYCLE_INTERVAL = process.env.CYCLE_INTERVAL || 15; // minutes
 var BOOST_MIN_HOURS = process.env.BOOST_MIN_HOURS || 12;
+var THRESHOLD_NUMERATOR = process.env.THRESHOLD_NUMERATOR || 1;
+var THRESHOLD_DENOMINATOR = process.env.THRESHOLD_DENOMINATOR || 1;
+var USER_BOOST_LIMIT = process.env.USER_BOOST_LIMIT || 3;
+var USER_BOOST_INTERVAL_HOURS = process.env.USER_BOOST_INTERVAL_HOURS || 24;
 
 var config = {
   user: process.env.DB_USER || 'ambassador',
@@ -32,10 +36,16 @@ var thresh_query = `SELECT ceil(avg(favourites_count)) AS threshold
     AND updated_at > NOW() - INTERVAL '` + THRESHOLD_INTERVAL_DAYS + ` days'`
 
 // Find all toots we haven't boosted yet, but ought to
-var query = `SELECT id, updated_at
+// sub-query 1:
+// have we boosted this already?
+// sub-query 2:
+// if we look at how many statuses we've boosted from a given account over
+// the past n hours, is that number greater than three?
+
+var query = `SELECT public_toots.id
   FROM public_toots
   WHERE
-    favourites_count >= $1
+    favourites_count >= ceil($1)
     AND NOT EXISTS (
       SELECT 1
       FROM public_toots AS pt2
@@ -45,26 +55,23 @@ var query = `SELECT id, updated_at
     )
     AND NOT EXISTS (
       SELECT 1
-      FROM blocks_ambassador
+      FROM (
+        SELECT pt3.account_id, count(*) AS count
+        FROM public_toots pt3, public_toots
+        WHERE
+          pt3.id = public_toots.reblog_of_id
+          AND public_toots.account_id = $2
+          AND public_toots.updated_at > NOW() - INTERVAL '` + USER_BOOST_INTERVAL_HOURS + ` hours'
+        GROUP BY pt3.account_id
+      ) AS dt, public_toots AS pt4
       WHERE
-        public_toots.account_id = blocks_ambassador.account_id
+        dt.count > ` + USER_BOOST_LIMIT + `
+        AND dt.account_id = pt4.account_id
     )
     AND updated_at > NOW() - INTERVAL '` + BOOST_MAX_DAYS + ` days'
     AND updated_at < NOW() - INTERVAL '` + BOOST_MIN_HOURS + ` hours'
-  ORDER BY RANDOM()
+  ORDER BY favourites_count DESC
   LIMIT $3`
-
-// adding this to the WHERE clause would let it skip cases where we're
-// blocked by the original poster, but we don't have read privs to blocks
-// and I'm not sure I want to change that.  -rt
-//
-//    AND NOT EXISTS (
-//      SELECT 1
-//      FROM blocks AS bl1
-//      WHERE
-//        public_toots.account_id = bl1.account_id
-//        AND bl1.target_account_id = 13104
-//    )
 
 console.dir('STARTING AMBASSADOR');
 console.log('\tDB_USER:', DB_USER);
@@ -78,6 +85,8 @@ console.log('\tTHRESHOLD_INTERVAL_DAYS:', THRESHOLD_INTERVAL_DAYS);
 console.log('\tBOOST_MAX_DAYS:', BOOST_MAX_DAYS);
 console.log('\tTHRESHOLD_CHECK_INTERVAL:', THRESHOLD_CHECK_INTERVAL);
 console.log('\tCYCLE_INTERVAL:', CYCLE_INTERVAL);
+console.log('\tUSER_BOOST_LIMIT:', USER_BOOST_LIMIT);
+console.log('\tUSER_BOOST_INTERVAL_HOURS:', USER_BOOST_INTERVAL_HOURS);
 
 var g_threshold_downcount = 0;
 var g_threshold = 0;
@@ -90,7 +99,7 @@ function getThreshold(client, f) {
         throw "error running threshold query: " + err;
       }
 
-      g_threshold = result.rows[0].threshold;
+      g_threshold = result.rows[0].threshold * THRESHOLD_NUMERATOR / THRESHOLD_DENOMINATOR;
       g_threshold_downcount = THRESHOLD_CHECK_INTERVAL;
       return f(g_threshold);
     });
@@ -137,49 +146,43 @@ function cycle() {
   });
 }
 
+var M = new mastodon({
+  access_token: AMBASSADOR_TOKEN,
+  api_url: INSTANCE_HOST + '/api/v1'
+});
+
 function whoami(f) {
-  fetch(INSTANCE_HOST + '/api/v1/accounts/verify_credentials', {
-    headers: {
-      'Authorization': 'Bearer ' + AMBASSADOR_TOKEN
+  M.get('/accounts/verify_credentials', function(err, result) {
+    if (err) {
+      console.error('error getting current user id');
+      throw err;
     }
-  })
-  .then(res => res.json())
-  .then(result => {
     if (result.id === undefined) {
       console.error('verify_credentials result is undefined');
-      process.exit(1);
+      throw "verify_credentials failed";
     }
     console.log('Authenticated as ' + result.id + ' (' + result.display_name + ')');
     return f(result.id);
   })
-  .catch(err => {
-    console.error(err);
-    process.exit(1);
-  });
 }
 
 function boost(rows) {
   rows.forEach(function(row) {
     console.log('boosting status #' + row.id);
-    fetch(INSTANCE_HOST + '/api/v1/statuses/' + row.id + '/reblog', {
-      headers: {
-        'Authorization': 'Bearer ' + AMBASSADOR_TOKEN
-      },
-      body: '',
-      method: 'POST'
-    })
-    .then(res => res.json())
-    .then(result => {
-      if (result.message === 'Validation failed: Reblog of status already exists') {
-        console.log('Warning: tried to boost #' + row.id + ' but it had already been boosted by this account.');
-      } else if(result.message === 'This action is not allowed') {
-        console.log('Warning: tried to boost #' + row.id + ' but the action was not allowed.');
+    M.post('/statuses/' + row.id + '/reblog', function(err, result) {
+      if (err) {
+        if (err.message === 'Validation failed: Reblog of status already exists') {
+          return console.log('Warning: tried to boost #' + row.id + ' but it had already been boosted by this account.');
+        }
+
+        if (err.message === 'This action is not allowed') {
+          return console.log('Warning: tried to boost #' + row.id + ' but the action was not allowed.');
+        }
+
+        return console.log(err);
       }
-    }).catch(err => {
-      console.error(err);
-      process.exit(1);
     });
-  });
+  })
 }
 
 cycle();

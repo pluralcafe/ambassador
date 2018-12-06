@@ -12,6 +12,7 @@ CREATE USER ambassador;
 
 
 -- Now, create the view that ambassador actually uses
+DROP VIEW IF EXISTS public_toots;
 CREATE VIEW public_toots AS
   SELECT 
    statuses.id, statuses.reblog_of_id, statuses.account_id,
@@ -19,18 +20,24 @@ CREATE VIEW public_toots AS
     FROM statuses
     LEFT OUTER JOIN status_stats
      ON statuses.id = status_stats.status_id
-   WHERE visibility = 0
+    LEFT OUTER JOIN accounts
+     ON statuses.account_id = accounts.id
+   WHERE statuses.visibility = 0
+    AND statuses.updated_at > NOW() - INTERVAL '30 days'
+    AND statuses.local IS TRUE
+    AND (accounts.id = 13104 OR accounts.note NOT ILIKE '%#nobot%')
+    AND NOT EXISTS (
+     SELECT 1 FROM blocks
+      WHERE statuses.account_id = blocks.account_id
+      AND blocks.target_account_id = 13104  -- Change 13104 to your ambassador's account ID
+     )
 ;
 
--- Change 13104 to your ambassador's account ID
-CREATE VIEW blocks_ambassador AS
-  SELECT account_id
-    FROM blocks
-    WHERE target_account_id = 13104;
+-- performance helper
+CREATE INDEX index_status_stats_on_favourites_count ON status_stats (favourites_count);
 
 -- Make sure the role doesn't have access to anything undesireable
 REVOKE ALL FROM ambassador;
 
 -- Let ambassador select from the view
 GRANT SELECT ON public_toots TO ambassador;
-GRANT SELECT ON blocks_ambassador TO ambassador;
